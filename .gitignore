@@ -39,3 +39,9 @@ env/
 
 # Jupyter Notebook
 .ipynb_checkpoints
+
+# AWS Credentials and Keys
+*.pem
+*accessKeys*.csv
+voyager-api-key.pem
+developer_accessKeys.csv
