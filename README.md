@@ -34,6 +34,8 @@ To update the Voyager submodule:
 bash
 git submodule update --remote voyager_files/voyager
 
+I have modified some of the configuration file from within voyager_files/voyager and kept them in the voyager_files/ folder. you may have to use those (ie overwrite the ones you get from voyager) to get the API end points to work correctly. I will include a video recording of how the end points work after I conffgured it.
+
 ## Competition Details
 This project is part of the [RMIT GenAI and Cyber Security Hackathon](https://www.kaggle.com/competitions/rmit-gen-ai-and-cyber-security-hackathon/overview).
 
