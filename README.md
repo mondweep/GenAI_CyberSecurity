@@ -39,5 +39,8 @@ I have modified some of the configuration file from within voyager_files/voyager
 ## Competition Details
 This project is part of the [RMIT GenAI and Cyber Security Hackathon](https://www.kaggle.com/competitions/rmit-gen-ai-and-cyber-security-hackathon/overview).
 
+## A record of the attempt at Challenge 1 (https://www.kaggle.com/code/aisuko/challenge-1-foundational-level?scriptVersionId=204101404)
+https://youtube.com/live/R32JnJFwOWk
+
 ## License
 This project is licensed under the Apache License 2.0 - see the [LICENSE](LICENSE) file for details.
