@@ -20,6 +20,22 @@ from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
 from cryptography.hazmat.backends import default_backend
 import base64
 
+# Get the script directory
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+
+# Get the project root (two levels up from script directory)
+PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+# Update paths for results directories
+results_dir = os.path.join(SCRIPT_DIR, 'results')
+if not os.path.exists(results_dir):
+    os.makedirs(results_dir)
+
+# Update the CSV reading line to use project root
+csv_path = os.path.join(PROJECT_ROOT, 'input', 'cyber-security-incidents', 'incidents.csv')
+print(f"Attempting to read CSV from: {csv_path}")  # Debug print
+df = pd.read_csv(csv_path)
+
 # Download all required NLTK data
 nltk.download('punkt')
 nltk.download('stopwords')
@@ -40,11 +56,6 @@ def preprocess_text(text):
     tokens = [t for t in tokens if t not in stop_words]
     return ' '.join(tokens)
 
-# Create results directory if it doesn't exist
-results_dir = 'results'
-if not os.path.exists(results_dir):
-    os.makedirs(results_dir)
-
 # Create a text file for logging results
 log_file = os.path.join(results_dir, 'analysis_results.txt')
 
@@ -57,9 +68,6 @@ def log_result(text, file=log_file):
 with open(log_file, 'w') as f:
     f.write(f"Analysis Results - {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
     f.write("="*50 + "\n\n")
-
-# Read the dataset
-df = pd.read_csv('../../input/cyber-security-incidents/incidents.csv')
 
 # 1. Data Preprocessing
 missing_values = df.isnull().sum()
@@ -190,7 +198,7 @@ print(f"Analysis complete. Results saved in {results_dir}/")
 # Add this class after the existing imports
 class SecurityAnalysis:
     def __init__(self):
-        self.results_dir = 'security_results'
+        self.results_dir = os.path.join(SCRIPT_DIR, 'security_results')
         if not os.path.exists(self.results_dir):
             os.makedirs(self.results_dir)
     
@@ -212,33 +220,30 @@ class SecurityAnalysis:
     def encrypt_message(self, message: str, key: bytes) -> tuple:
         """Encrypt a message using AES-CBC"""
         iv = os.urandom(16)
-        cipher = Cipher(
-            algorithms.AES(key),
-            modes.CBC(iv),
-            backend=default_backend()
-        )
+        cipher = Cipher(algorithms.AES(key), modes.CBC(iv), backend=default_backend())
         encryptor = cipher.encryptor()
         
         # Pad the message
         padded_message = self._pad_message(message.encode())
         ciphertext = encryptor.update(padded_message) + encryptor.finalize()
         
-        return base64.b64encode(iv + ciphertext), iv
+        # Return base64 encoded ciphertext (without IV)
+        return base64.b64encode(ciphertext), iv
 
     def decrypt_message(self, encrypted_message: bytes, key: bytes, iv: bytes) -> str:
         """Decrypt a message using AES-CBC"""
-        cipher = Cipher(
-            algorithms.AES(key),
-            modes.CBC(iv),
-            backend=default_backend()
-        )
-        decryptor = cipher.decryptor()
-        
-        # Decode and remove IV
-        ciphertext = base64.b64decode(encrypted_message)[16:]
-        padded_plaintext = decryptor.update(ciphertext) + decryptor.finalize()
-        
-        return self._unpad_message(padded_plaintext).decode()
+        try:
+            cipher = Cipher(algorithms.AES(key), modes.CBC(iv), backend=default_backend())
+            decryptor = cipher.decryptor()
+            
+            # Decrypt
+            padded_plaintext = decryptor.update(encrypted_message) + decryptor.finalize()
+            
+            # Remove padding and decode
+            return self._unpad_message(padded_plaintext).decode()
+        except Exception as e:
+            print(f"Decryption failed: {e}")
+            return None
 
     def _pad_message(self, message: bytes) -> bytes:
         """Add PKCS7 padding"""
@@ -288,5 +293,118 @@ def run_security_analysis():
     for result in results:
         log_result(result)
 
-# Add this at the end of your main script
-run_security_analysis() 
+# Add this after the SecurityAnalysis class definition
+
+def test_encryption_workflow():
+    """Test the complete encryption/decryption workflow with multiple messages"""
+    security = SecurityAnalysis()
+    
+    # Test cases
+    test_cases = [
+        ("This is a secret message", "password123"),
+        ("Another confidential text", "strongpass456"),
+        ("Sensitive data here", "secure789")
+    ]
+    
+    results = []
+    for message, password in test_cases:
+        # Generate key
+        key, salt = security.generate_key(password)
+        results.append(f"\nTest with message: '{message}' and password: '{password}'")
+        results.append(f"Generated salt: {base64.b64encode(salt).decode()}")
+        
+        # First encryption
+        encrypted1, iv1 = security.encrypt_message(message, key)
+        results.append(f"First encryption: {encrypted1.decode()}")
+        
+        # Second encryption (should be different due to different IV)
+        encrypted2, iv2 = security.encrypt_message(message, key)
+        results.append(f"Second encryption: {encrypted2.decode()}")
+        
+        # Verify different IVs produce different results
+        results.append(f"Encryptions are different: {encrypted1 != encrypted2}")
+        
+        # Decrypt and verify
+        decrypted = security.decrypt_message(encrypted1, key, iv1)
+        results.append(f"Decrypted message matches: {decrypted == message}")
+    
+    # Save results
+    with open(os.path.join(security.results_dir, 'encryption_test_results.txt'), 'w') as f:
+        f.write('\n'.join(results))
+    
+    return results
+
+# Integration with Voyager project
+class VoyagerIntegration:
+    def __init__(self):
+        self.security = SecurityAnalysis()
+    
+    def encrypt_voyager_data(self, data: dict, password: str) -> dict:
+        """Encrypt data for Voyager storage"""
+        key, salt = self.security.generate_key(password)
+        encrypted_data = {}
+        
+        for field, value in data.items():
+            if isinstance(value, str):
+                encrypted_value, iv = self.security.encrypt_message(value, key)
+                encrypted_data[field] = {
+                    'encrypted': encrypted_value.decode(),  # Already base64 encoded
+                    'iv': base64.b64encode(iv).decode(),
+                    'salt': base64.b64encode(salt).decode()
+                }
+            else:
+                encrypted_data[field] = value
+        
+        return encrypted_data
+    
+    def decrypt_voyager_data(self, encrypted_data: dict, password: str) -> dict:
+        """Decrypt data from Voyager storage"""
+        decrypted_data = {}
+        
+        for field, value in encrypted_data.items():
+            if isinstance(value, dict) and 'encrypted' in value:
+                key, _ = self.security.generate_key(
+                    password, 
+                    base64.b64decode(value['salt'])
+                )
+                decrypted_value = self.security.decrypt_message(
+                    base64.b64decode(value['encrypted']),
+                    key,
+                    base64.b64decode(value['iv'])
+                )
+                decrypted_data[field] = decrypted_value
+            else:
+                decrypted_data[field] = value
+        
+        return decrypted_data
+
+# Add these lines at the end of your main script
+if __name__ == "__main__":
+    # Run the original analysis
+    run_security_analysis()
+    
+    # Run encryption workflow tests
+    print("\nTesting encryption workflow...")
+    test_results = test_encryption_workflow()
+    for result in test_results:
+        print(result)
+    
+    # Test Voyager integration
+    print("\nTesting Voyager integration...")
+    voyager = VoyagerIntegration()
+    
+    # Example Voyager data
+    test_data = {
+        'user_id': '12345',
+        'message': 'Sensitive information',
+        'timestamp': '2024-01-20 10:00:00'
+    }
+    
+    # Test encryption and decryption
+    encrypted_data = voyager.encrypt_voyager_data(test_data, 'voyager_password')
+    decrypted_data = voyager.decrypt_voyager_data(encrypted_data, 'voyager_password')
+    
+    print(f"Original data: {test_data}")
+    print(f"Encrypted data: {encrypted_data}")
+    print(f"Decrypted data: {decrypted_data}")
+    print(f"Data integrity maintained: {test_data == decrypted_data}") 

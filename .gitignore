@@ -45,3 +45,33 @@ env/
 *accessKeys*.csv
 voyager-api-key.pem
 developer_accessKeys.csv
+
+# Model files
+*.pkl
+*.model
+results/*.pkl
+src/challenge_2/results/*.pkl
+
+# Sensitive data
+*.pem
+*.key
+*_key*
+developer_accessKeys.csv
+voyager-api-key.pem
+
+# Results directories
+results/
+**/results/
+src/challenge_2/results/
+
+# Python virtual environment
+venv/
+__pycache__/
+*.pyc
+
+# Other sensitive files
+local-swagger.json
+
+# Exclude all CSVs except incidents.csv
+*.csv
+!input/cyber-security-incidents/incidents.csv

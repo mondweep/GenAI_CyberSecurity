@@ -1,0 +1,21 @@
+
+Test with message: 'This is a secret message' and password: 'password123'
+Generated salt: hBtiaOSCVduNiicJlQIPSA==
+First encryption: mGG8pldr+T2Dvy2ZNgsgdSE0WN9YmZQ7UQHYniyCiBE=
+Second encryption: 2ROsoilZ9gIODKVGu8vNbVDJ2gigty+dZKasKtxGorw=
+Encryptions are different: True
+Decrypted message matches: False
+
+Test with message: 'Another confidential text' and password: 'strongpass456'
+Generated salt: Cx2VuywE80OODnMgJzphBA==
+First encryption: 1/1eZCcnICNuRLaIzX8zhKj4Fm4d5b2dA3Ysv7lK9kU=
+Second encryption: aqvhoMjIXMvnkVZpGoAgCysSvB9jxUjyz6MHp9Qp6fQ=
+Encryptions are different: True
+Decrypted message matches: False
+
+Test with message: 'Sensitive data here' and password: 'secure789'
+Generated salt: dkRxTeGkof5wFEpelszJkw==
+First encryption: aW6erIxom/1dljTS2QU8Kb5iUuz5Mfsj+brbdnr8cvk=
+Second encryption: VSW6oH9/wsxQsqHM9/L4gfURDf+K9X901T90Pbywbuc=
+Encryptions are different: True
+Decrypted message matches: False
