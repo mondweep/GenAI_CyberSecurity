@@ -1,0 +1,49 @@
+Analysis Results - 2024-12-21 18:26:20
+==================================================
+
+Missing values:
+ID                      0
+Text                    0
+Label                   0
+Vulnerability Type    523
+Timestamp               0
+
+Dataset Info:
+<class 'pandas.core.frame.DataFrame'>RangeIndex: 10000 entries, 0 to 9999Data columns (total 5 columns): #   Column              Non-Null Count  Dtype ---  ------              --------------  -----  0   ID                  10000 non-null  int64  1   Text                10000 non-null  object 2   Label               10000 non-null  int64  3   Vulnerability Type  9477 non-null   object 4   Timestamp           10000 non-null  objectdtypes: int64(2), object(3)memory usage: 390.8+ KB
+
+Vulnerability Type Distribution:
+Vulnerability Type
+SSL Vulnerability       558
+Privilege Escalation    558
+Reconnaissance          558
+Data Exfiltration       553
+Ransomware              544
+ARP Spoofing            541
+Insider Threat          535
+Unauthorized Access     531
+DDoS                    528
+Malware                 528
+Port Scanning           523
+Brute Force             513
+Exploit                 513
+Worm                    507
+Phishing                507
+SQL Injection           502
+Sensitive Data Leak     496
+Packet Flooding         482
+
+Label Distribution:
+Label
+1    9477
+0     523
+
+Summary Statistics:
+                ID         Label            Timestamp         month     year   text_length
+count  10000.00000  10000.000000                10000  10000.000000  10000.0  10000.000000
+mean    5000.50000      0.947700  2024-10-08 22:37:30      9.728800   2024.0     67.606800
+min        1.00000      0.000000  2024-09-21 14:00:00      9.000000   2024.0     58.000000
+25%     2500.75000      1.000000  2024-09-30 06:18:45      9.000000   2024.0     62.000000
+50%     5000.50000      1.000000  2024-10-08 22:37:30     10.000000   2024.0     67.000000
+75%     7500.25000      1.000000  2024-10-17 14:56:15     10.000000   2024.0     73.000000
+max    10000.00000      1.000000  2024-10-26 07:15:00     10.000000   2024.0     81.000000
+std     2886.89568      0.222642                  NaN      0.444601      0.0      6.387681
