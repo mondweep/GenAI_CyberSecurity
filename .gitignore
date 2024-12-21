@@ -62,7 +62,7 @@ voyager-api-key.pem
 # Results directories
 results/
 **/results/
-src/challenge_2/results/
+#src/challenge_2/results/
 
 # Python virtual environment
 venv/
