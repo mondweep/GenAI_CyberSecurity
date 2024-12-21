@@ -1,3 +1,6 @@
 [submodule "voyager_files/voyager"]
 	path = voyager_files/voyager
 	url = https://github.com/SkywardAI/voyager.git
+[submodule "voyager_files/voyager_file_changes"]
+	path = voyager_files/voyager_file_changes
+	url = https://github.com/mondweep/voyager_files.git
