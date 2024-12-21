@@ -19,6 +19,9 @@ from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
 from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
 from cryptography.hazmat.backends import default_backend
 import base64
+import argparse
+import json
+import sys
 
 # Get the script directory
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -411,4 +414,35 @@ plt.title('Confusion Matrix')
 plt.ylabel('True Label')
 plt.xlabel('Predicted Label')
 plt.savefig(os.path.join(results_dir, 'confusion_matrix.png'))
-plt.close() 
+plt.close()
+
+def handle_cli():
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--mode', choices=['encrypt', 'decrypt'])
+    parser.add_argument('--data', type=str)
+    parser.add_argument('--password', type=str)
+    
+    args = parser.parse_args()
+    
+    security = SecurityAnalysis()
+    
+    if args.mode == 'encrypt':
+        data = json.loads(args.data)
+        key, salt = security.generate_key(args.password)
+        encrypted, iv = security.encrypt_message(json.dumps(data), key)
+        
+        result = {
+            'encrypted': encrypted.decode(),
+            'salt': base64.b64encode(salt).decode(),
+            'iv': base64.b64encode(iv).decode()
+        }
+        print(json.dumps(result))
+
+# Modify your existing main block to look like this:
+if __name__ == '__main__':
+    # Check if command line arguments are provided
+    if len(sys.argv) > 1:
+        handle_cli()
+    else:
+        # Your existing main code
+        print(f"Analysis complete. Results saved in {results_dir}/") 
