@@ -160,8 +160,10 @@ log_result("\nTraining Logistic Regression model...")
 model = LogisticRegression(max_iter=1000)
 model.fit(X_train, y_train)
 
-# Model evaluation
+# Make predictions directly on X_test (it's already transformed)
 y_pred = model.predict(X_test)
+
+# Model evaluation
 log_result("\nClassification Report:")
 log_result(classification_report(y_test, y_pred))
 
@@ -378,33 +380,35 @@ class VoyagerIntegration:
         
         return decrypted_data
 
-# Add these lines at the end of your main script
-if __name__ == "__main__":
-    # Run the original analysis
-    run_security_analysis()
+# Add this after the model prediction section
+def save_model_metrics(y_test, y_pred, results_dir):
+    """Save model performance metrics"""
+    # Generate classification report
+    class_report = classification_report(y_test, y_pred)
     
-    # Run encryption workflow tests
-    print("\nTesting encryption workflow...")
-    test_results = test_encryption_workflow()
-    for result in test_results:
-        print(result)
-    
-    # Test Voyager integration
-    print("\nTesting Voyager integration...")
-    voyager = VoyagerIntegration()
-    
-    # Example Voyager data
-    test_data = {
-        'user_id': '12345',
-        'message': 'Sensitive information',
-        'timestamp': '2024-01-20 10:00:00'
-    }
-    
-    # Test encryption and decryption
-    encrypted_data = voyager.encrypt_voyager_data(test_data, 'voyager_password')
-    decrypted_data = voyager.decrypt_voyager_data(encrypted_data, 'voyager_password')
-    
-    print(f"Original data: {test_data}")
-    print(f"Encrypted data: {encrypted_data}")
-    print(f"Decrypted data: {decrypted_data}")
-    print(f"Data integrity maintained: {test_data == decrypted_data}") 
+    # Save classification report
+    with open(os.path.join(results_dir, 'model_performance.txt'), 'w') as f:
+        f.write("Classification Report:\n")
+        f.write("====================\n")
+        f.write(class_report)
+        
+        # Add additional metrics if needed
+        f.write("\nConfusion Matrix:\n")
+        f.write("================\n")
+        f.write(str(confusion_matrix(y_test, y_pred)))
+
+# Update the model training section
+# ... existing code ...
+y_pred = model.predict(X_test)
+
+# Save model metrics
+save_model_metrics(y_test, y_pred, results_dir)
+
+# Continue with existing confusion matrix visualization
+plt.figure(figsize=(8, 6))
+sns.heatmap(confusion_matrix(y_test, y_pred), annot=True, fmt='d')
+plt.title('Confusion Matrix')
+plt.ylabel('True Label')
+plt.xlabel('Predicted Label')
+plt.savefig(os.path.join(results_dir, 'confusion_matrix.png'))
+plt.close() 
