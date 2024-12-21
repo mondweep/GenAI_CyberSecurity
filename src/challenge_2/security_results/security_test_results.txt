@@ -1,0 +1,3 @@
+Generated key from password with salt: wuNUqHuNBthWyNV+Vlppsg==
+Encrypted message: G1eFboGhLBFxv/lsLFP2JPu3VK7lryyNDDVOpZB9wiRk3J9uO/jhkBEZT9oIMTjez0KkIAFPs15Vr2DN2CfWfA==
+Decrypted message: This is a test message for encryption
