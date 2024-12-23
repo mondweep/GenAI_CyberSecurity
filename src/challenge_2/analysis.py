@@ -228,37 +228,42 @@ class SecurityAnalysis:
         cipher = Cipher(algorithms.AES(key), modes.CBC(iv), backend=default_backend())
         encryptor = cipher.encryptor()
         
-        # Pad the message
-        padded_message = self._pad_message(message.encode())
+        # Ensure proper padding and encoding
+        padded_message = self._pad_message(message.encode('utf-8'))
         ciphertext = encryptor.update(padded_message) + encryptor.finalize()
         
-        # Return base64 encoded ciphertext (without IV)
         return base64.b64encode(ciphertext), iv
 
     def decrypt_message(self, encrypted_message: bytes, key: bytes, iv: bytes) -> str:
         """Decrypt a message using AES-CBC"""
         try:
+            # Decode base64 first
+            encrypted_bytes = base64.b64decode(encrypted_message)
+            
             cipher = Cipher(algorithms.AES(key), modes.CBC(iv), backend=default_backend())
             decryptor = cipher.decryptor()
             
-            # Decrypt
-            padded_plaintext = decryptor.update(encrypted_message) + decryptor.finalize()
+            # Decrypt and unpad
+            padded_plaintext = decryptor.update(encrypted_bytes) + decryptor.finalize()
+            unpadded_plaintext = self._unpad_message(padded_plaintext)
             
-            # Remove padding and decode
-            return self._unpad_message(padded_plaintext).decode()
+            return unpadded_plaintext.decode('utf-8')
         except Exception as e:
             print(f"Decryption failed: {e}")
             return None
 
     def _pad_message(self, message: bytes) -> bytes:
         """Add PKCS7 padding"""
-        padding_length = 16 - (len(message) % 16)
+        block_size = 16
+        padding_length = block_size - (len(message) % block_size)
         padding = bytes([padding_length] * padding_length)
         return message + padding
 
     def _unpad_message(self, padded_message: bytes) -> bytes:
         """Remove PKCS7 padding"""
         padding_length = padded_message[-1]
+        if padding_length > 16:
+            raise ValueError("Invalid padding")
         return padded_message[:-padding_length]
 
     def test_encryption_workflow(self, message: str, password: str):
@@ -416,6 +421,28 @@ plt.xlabel('Predicted Label')
 plt.savefig(os.path.join(results_dir, 'confusion_matrix.png'))
 plt.close()
 
+def handle_chat_encryption(messages, password):
+    security = SecurityAnalysis()
+    key, salt = security.generate_key(password)
+    
+    encrypted_messages = []
+    for message in messages:
+        if message.get('sensitive', False):
+            encrypted, iv = security.encrypt_message(message['content'], key)
+            encrypted_messages.append({
+                **message,
+                'content': encrypted.decode(),
+                'iv': base64.b64encode(iv).decode(),
+                'encrypted': True
+            })
+        else:
+            encrypted_messages.append(message)
+    
+    return {
+        'messages': encrypted_messages,
+        'salt': base64.b64encode(salt).decode()
+    }
+
 def handle_cli():
     parser = argparse.ArgumentParser()
     parser.add_argument('--mode', choices=['encrypt', 'decrypt'])
@@ -423,19 +450,22 @@ def handle_cli():
     parser.add_argument('--password', type=str)
     
     args = parser.parse_args()
-    
     security = SecurityAnalysis()
     
     if args.mode == 'encrypt':
         data = json.loads(args.data)
-        key, salt = security.generate_key(args.password)
-        encrypted, iv = security.encrypt_message(json.dumps(data), key)
-        
-        result = {
-            'encrypted': encrypted.decode(),
-            'salt': base64.b64encode(salt).decode(),
-            'iv': base64.b64encode(iv).decode()
-        }
+        if 'messages' in data:
+            # Handle chat messages
+            result = handle_chat_encryption(data['messages'], args.password)
+        else:
+            # Handle regular encryption
+            key, salt = security.generate_key(args.password)
+            encrypted, iv = security.encrypt_message(json.dumps(data), key)
+            result = {
+                'encrypted': encrypted.decode(),
+                'salt': base64.b64encode(salt).decode(),
+                'iv': base64.b64encode(iv).decode()
+            }
         print(json.dumps(result))
 
 # Modify your existing main block to look like this:
