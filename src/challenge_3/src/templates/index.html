@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Network Traffic Classifier</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        .input-box {
+            width: 100%;
+            padding: 10px;
+            margin: 10px 0;
+        }
+        .analyze-button {
+            background-color: #4CAF50;
+            color: white;
+            padding: 10px 20px;
+            border: none;
+            cursor: pointer;
+        }
+        .result-box {
+            margin-top: 20px;
+            padding: 15px;
+            border: 1px solid #ddd;
+        }
+        .normal {
+            color: green;
+        }
+        .malicious {
+            color: red;
+        }
+        .histogram {
+            margin-top: 20px;
+            display: flex;
+            gap: 10px;
+        }
+        .bar {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+        .bar-value {
+            width: 40px;
+            background-color: #ddd;
+            margin-bottom: 5px;
+            text-align: center;
+        }
+        .normal-bar { background-color: #4CAF50; }
+        .malicious-bar { background-color: #f44336; }
+    </style>
+</head>
+<body>
+    <h1>Network Traffic Classifier</h1>
+    
+    <textarea id="trafficPattern" class="input-box" rows="4" 
+              placeholder="Enter network traffic pattern..."></textarea>
+    
+    <button onclick="analyzeTraffic()" class="analyze-button">Analyze</button>
+    
+    <div id="result" class="result-box" style="display: none;">
+        Classification: <span id="classification"></span>
+    </div>
+    
+    <div class="histogram">
+        <div class="bar">
+            <div id="normalBar" class="bar-value normal-bar">0</div>
+            <div>Normal</div>
+        </div>
+        <div class="bar">
+            <div id="maliciousBar" class="bar-value malicious-bar">0</div>
+            <div>Malicious</div>
+        </div>
+    </div>
+
+    <script>
+        function analyzeTraffic() {
+            const trafficPattern = document.getElementById('trafficPattern').value;
+            
+            fetch('/analyze', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({traffic_pattern: trafficPattern})
+            })
+            .then(response => response.json())
+            .then(data => {
+                // Update result
+                const resultDiv = document.getElementById('result');
+                const classificationSpan = document.getElementById('classification');
+                resultDiv.style.display = 'block';
+                classificationSpan.textContent = data.result;
+                classificationSpan.className = data.result.toLowerCase();
+                
+                // Update histogram
+                document.getElementById('normalBar').textContent = data.normal_count;
+                document.getElementById('maliciousBar').textContent = data.malicious_count;
+            });
+        }
+    </script>
+</body>
+</html> 
