@@ -6,7 +6,7 @@ app = Flask(__name__)
 
 # Load model and tokenizer globally
 print("Loading model...")
-MODEL_NAME = "thisismon/network-vulnerability-classifier"
+MODEL_NAME = "thisismon/nnetwork-vulnerability-classifier-balanced"
 tokenizer = AutoTokenizer.from_pretrained(MODEL_NAME)
 model = AutoModelForSequenceClassification.from_pretrained(MODEL_NAME)
 print("Model loaded successfully!")
