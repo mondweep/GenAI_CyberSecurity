@@ -1,0 +1,78 @@
+import boto3
+from transformers import AutoTokenizer, AutoModelForSequenceClassification
+import spacy
+import torch
+from nltk.tokenize import word_tokenize
+from nltk.tag import pos_tag
+import numpy as np
+from sklearn.metrics.pairwise import cosine_similarity
+import json
+from datetime import datetime
+
+class PastTenseAttackModel:
+    def __init__(self):
+        # Initialize AWS clients
+        self.bedrock = boto3.client('bedrock-runtime')
+        self.sagemaker = boto3.client('sagemaker')
+        
+        # Load NLP tools for tense transformation
+        self.nlp = spacy.load('en_core_web_sm')
+        
+        # For response analysis
+        self.tokenizer = AutoTokenizer.from_pretrained("bert-base-uncased")
+        
+    def transform_to_past_tense(self, text):
+        """Convert text from present to past tense"""
+        doc = self.nlp(text)
+        transformed = []
+        
+        for token in doc:
+            if token.tag_ == "VBP" or token.tag_ == "VBZ":  # Present tense verbs
+                # Convert to past tense using spaCy's morphology
+                transformed.append(token._.inflect("VBD"))
+            else:
+                transformed.append(token.text)
+                
+        return " ".join(transformed)
+    
+    def get_llm_response(self, prompt, model_id="anthropic.claude-v2"):
+        """Get response from AWS Bedrock"""
+        response = self.bedrock.invoke_model(
+            modelId=model_id,
+            body=json.dumps({
+                "prompt": prompt,
+                "max_tokens": 512,
+                "temperature": 0.7
+            })
+        )
+        return json.loads(response['body'].read())['completion']
+    
+    def analyze_responses(self, original_response, modified_response):
+        """Analyze differences between original and modified responses"""
+        # Encode responses
+        orig_encoding = self.tokenizer(original_response, return_tensors='pt', padding=True)
+        mod_encoding = self.tokenizer(modified_response, return_tensors='pt', padding=True)
+        
+        # Calculate similarity
+        similarity = cosine_similarity(
+            orig_encoding['input_ids'].numpy(), 
+            mod_encoding['input_ids'].numpy()
+        )[0][0]
+        
+        return {
+            'similarity_score': similarity,
+            'length_diff': len(modified_response) - len(original_response),
+            'original_response': original_response,
+            'modified_response': modified_response
+        }
+    
+    def log_results(self, results, bucket_name, prefix):
+        """Log results to S3"""
+        s3 = boto3.client('s3')
+        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        
+        s3.put_object(
+            Bucket=bucket_name,
+            Key=f"{prefix}/attack_results_{timestamp}.json",
+            Body=json.dumps(results)
+        ) 
