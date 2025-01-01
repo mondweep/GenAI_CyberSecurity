@@ -4,7 +4,13 @@ from transformers import AutoTokenizer, AutoModelForSequenceClassification, Trai
 from sklearn.model_selection import train_test_split
 import torch
 from datasets import Dataset
-from sklearn.metrics import accuracy_score, precision_recall_fscore_support
+from sklearn.metrics import (
+    accuracy_score, 
+    precision_score, 
+    recall_score, 
+    f1_score,
+    precision_recall_fscore_support
+)
 import random
 from sklearn.model_selection import KFold
 import string
@@ -66,87 +72,116 @@ def clean_and_balance_dataset(file_path="../network_vulnerability_dataset (1).cs
     def determine_label(text):
         text_lower = text.lower()
         
-        # Check for explicit normal patterns
-        normal_match = any(pattern in text_lower for pattern in normal_patterns)
-        malicious_match = any(pattern in text_lower for pattern in malicious_patterns)
+        # Context-aware pattern matching
+        security_contexts = {
+            'normal': {
+                'authentication': [
+                    ('login successful', 'valid credentials'),
+                    ('session created', 'authenticated user'),
+                    ('mfa verified', 'two-factor complete')
+                ],
+                'data_access': [
+                    ('read operation', 'select query', 'standard access'),
+                    ('view product', 'browse catalog', 'list items'),
+                    ('download file', 'fetch data', 'retrieve record')
+                ],
+                'user_activity': [
+                    ('user session', 'regular activity', 'standard operation'),
+                    ('client request', 'customer access', 'normal traffic'),
+                    ('scheduled task', 'automated job', 'routine check')
+                ]
+            },
+            'malicious': {
+                'injection': [
+                    ('sql injection', 'script injection', 'code injection'),
+                    ('malicious payload', 'harmful script', 'exploit code'),
+                    ('injection attempt', 'injection detected', 'injection pattern')
+                ],
+                'authentication_abuse': [
+                    ('brute force', 'password spray', 'credential stuffing'),
+                    ('auth bypass', 'privilege escalation', 'unauthorized elevation'),
+                    ('multiple failed', 'repeated failure', 'login abuse')
+                ],
+                'suspicious_patterns': [
+                    ('port scan', 'network probe', 'vulnerability scan'),
+                    ('unusual traffic', 'abnormal pattern', 'suspicious activity'),
+                    ('data exfiltration', 'unauthorized transfer', 'suspicious download')
+                ]
+            }
+        }
         
-        # More balanced logic
-        if normal_match and not malicious_match:
-            return 0
-        elif malicious_match:
-            return 1
-        elif "error" in text_lower or "failed" in text_lower:
-            # Only mark as malicious if it's a security-related failure
-            return 1 if any(sec_term in text_lower for sec_term in ["login", "auth", "access", "security"]) else 0
-        # Default to normal if uncertain (changed from previous malicious default)
-        return 0
+        # Score-based classification
+        normal_score = 0
+        malicious_score = 0
+        
+        # Context scoring
+        for context, patterns in security_contexts['normal'].items():
+            for pattern_group in patterns:
+                if any(p in text_lower for p in pattern_group):
+                    normal_score += 1
+                    # Bonus for multiple matches in same context
+                    if sum(p in text_lower for p in pattern_group) > 1:
+                        normal_score += 0.5
+        
+        for context, patterns in security_contexts['malicious'].items():
+            for pattern_group in patterns:
+                if any(p in text_lower for p in pattern_group):
+                    malicious_score += 1.5  # Weight malicious patterns more heavily
+                    # Bonus for multiple matches in same context
+                    if sum(p in text_lower for p in pattern_group) > 1:
+                        malicious_score += 1
+        
+        # Additional context checks
+        def check_timing_patterns(text):
+            timing_indicators = {
+                'malicious': ['rapid', 'repeated', 'multiple', 'consecutive', 'burst'],
+                'normal': ['scheduled', 'periodic', 'regular', 'routine']
+            }
+            return (sum(t in text_lower for t in timing_indicators['malicious']),
+                    sum(t in text_lower for t in timing_indicators['normal']))
+        
+        def check_data_patterns(text):
+            data_indicators = {
+                'malicious': ['overflow', 'buffer', 'exploit', 'payload', 'bypass'],
+                'normal': ['json', 'xml', 'api', 'request', 'query']
+            }
+            return (sum(d in text_lower for d in data_indicators['malicious']),
+                    sum(d in text_lower for d in data_indicators['normal']))
+        
+        # Add timing and data pattern scores
+        mal_timing, norm_timing = check_timing_patterns(text_lower)
+        mal_data, norm_data = check_data_patterns(text_lower)
+        
+        malicious_score += (mal_timing * 0.5 + mal_data * 0.5)
+        normal_score += (norm_timing * 0.3 + norm_data * 0.3)
+        
+        # Final decision with confidence
+        confidence = abs(malicious_score - normal_score) / (malicious_score + normal_score + 1e-6)
+        
+        if malicious_score > normal_score:
+            return 1, confidence
+        else:
+            return 0, confidence
     
     # Relabel based on enhanced criteria
     print("Relabeling data based on improved criteria...")
-    df['corrected_label'] = df['Text'].apply(determine_label)
+    df['corrected_label'] = df['Text'].apply(lambda x: determine_label(x)[0])  # Get label, not tuple
     
-    # Calculate required augmentation size
-    current_normal = len(df[df['corrected_label'] == 0])
-    current_malicious = len(df[df['corrected_label'] == 1])
-    target_size = original_size // 2  # Equal split between normal and malicious
+    # Verify distribution before augmentation
+    print("Pre-augmentation distribution:")
+    print(df['corrected_label'].value_counts())
     
-    # Data Augmentation for normal traffic
-    normal_templates = [
-        "User {} accessing {} via {}",
-        "Standard {} request to {} completed successfully",
-        "Normal {} traffic from {} to {}",
-        "Successful {} operation on {}",
-        "Regular {} activity on {} using {}",
-        "Authorized user performing {} on {} through {}"
-    ]
+    # Balance dataset properly
+    min_class_size = min(len(df[df['corrected_label'] == 0]), 
+                        len(df[df['corrected_label'] == 1]))
     
-    resources = [
-        "webpage", "database", "file server", "application",
-        "product catalog", "user profile", "dashboard",
-        "API endpoint", "web service", "content management system"
-    ]
+    normal_samples = df[df['corrected_label'] == 0].sample(n=min_class_size)
+    malicious_samples = df[df['corrected_label'] == 1].sample(n=min_class_size)
     
-    actions = [
-        "viewing", "accessing", "reading", "querying",
-        "downloading", "browsing", "requesting",
-        "monitoring", "updating", "retrieving"
-    ]
+    balanced_df = pd.concat([normal_samples, malicious_samples])
     
-    protocols = [
-        "HTTP", "HTTPS", "SSH", "FTP", "SFTP",
-        "TLS", "WebSocket", "API"
-    ]
-    
-    # Generate augmented normal traffic data
-    augmented_size = target_size - current_normal
-    print(f"Generating {augmented_size} augmented normal traffic records...")
-    
-    augmented_data = []
-    for _ in range(augmented_size):
-        template = np.random.choice(normal_templates)
-        if "{}" in template:
-            text = template.format(
-                np.random.choice(actions),
-                np.random.choice(resources),
-                np.random.choice(protocols)
-            )
-            augmented_data.append({"Text": text, "corrected_label": 0})
-    
-    # Add augmented data
-    augmented_df = pd.DataFrame(augmented_data)
-    df = pd.concat([df, augmented_df], ignore_index=True)
-    
-    # Final balance check
-    normal_samples = df[df['corrected_label'] == 0]
-    malicious_samples = df[df['corrected_label'] == 1]
-    
-    print(f"Final distribution:")
-    print(f"Normal traffic: {len(normal_samples)}")
-    print(f"Malicious traffic: {len(malicious_samples)}")
-    
-    # Save balanced dataset
-    balanced_df = pd.concat([normal_samples, malicious_samples]).sample(frac=1, random_state=42).reset_index(drop=True)
-    balanced_df.to_csv("../balanced_network_vulnerability_dataset.csv", index=False)
+    print("Final distribution:")
+    print(balanced_df['corrected_label'].value_counts())
     
     return balanced_df
 
@@ -240,18 +275,14 @@ def prepare_training_data(texts, labels):
     """Prepare training data with noise augmentation."""
     augmented_texts = []
     augmented_labels = []
-    
     for text, label in zip(texts, labels):
-        # Add original text
+        # Original text
         augmented_texts.append(text)
         augmented_labels.append(label)
-        
-        # Add noisy version (only for normal traffic to help balance)
-        if label == 0:  # Normal traffic
-            noisy_text = add_noise_to_text(text)
-            augmented_texts.append(noisy_text)
-            augmented_labels.append(label)
-    
+        # Add noise to both normal and malicious
+        noisy_text = add_noise_to_text(text, noise_level=0.2)
+        augmented_texts.append(noisy_text)
+        augmented_labels.append(label)
     return augmented_texts, augmented_labels
 
 def add_diverse_noise_to_text(text, noise_level=0.1):
@@ -284,8 +315,49 @@ def add_diverse_noise_to_text(text, noise_level=0.1):
     return ' '.join(words)
 
 def retrain_model():
-    """Retrain the model with balanced dataset and cross-validation."""
-    print("Starting model retraining process...")
+    """Retrain model with improved configuration"""
+    
+    # Initialize tokenizer first
+    tokenizer = AutoTokenizer.from_pretrained("bert-base-uncased")
+    
+    # Initialize model with better regularization
+    model = AutoModelForSequenceClassification.from_pretrained(
+        "bert-base-uncased",
+        num_labels=2,
+        hidden_dropout_prob=0.4,           # Moderate dropout
+        attention_probs_dropout_prob=0.4,  # Moderate attention dropout
+        classifier_dropout=0.4             # Moderate classifier dropout
+    ).to(device)
+    
+    # Adjusted training arguments
+    training_args = TrainingArguments(
+        output_dir="./balanced_model",
+        num_train_epochs=2,                # Reduced epochs
+        per_device_train_batch_size=32,    # Larger batch size
+        per_device_eval_batch_size=32,
+        learning_rate=5e-6,                # Even lower learning rate
+        weight_decay=0.4,                  # Increased regularization
+        warmup_ratio=0.3,                  # More warmup
+        max_grad_norm=0.5,                 # Stricter gradient clipping
+        evaluation_strategy="steps",
+        eval_steps=50,                     # More frequent evaluation
+        save_strategy="steps",
+        save_steps=50,
+        save_total_limit=2,
+        load_best_model_at_end=True,
+        metric_for_best_model="f1",
+        greater_is_better=True,
+        label_smoothing_factor=0.2         # Add label smoothing
+    )
+    
+    # Adjusted class weights to be less aggressive
+    class_weights = torch.tensor([1.0, 2.0]).to(device)  # Adjust based on class distribution
+    
+    # Add minimum epochs before early stopping
+    early_stopping = EarlyStoppingCallback(
+        early_stopping_patience=5,         # Increased patience
+        early_stopping_threshold=0.001     # Minimum change to qualify as improvement
+    )
     
     # Get balanced dataset
     balanced_df = clean_and_balance_dataset()
@@ -294,40 +366,11 @@ def retrain_model():
     texts = balanced_df['Text'].tolist()
     labels = balanced_df['corrected_label'].tolist()
     
-    # Initialize tokenizer and model
-    print("Initializing tokenizer and model...")
-    tokenizer = AutoTokenizer.from_pretrained("bert-base-uncased")
-    model = AutoModelForSequenceClassification.from_pretrained(
-        "bert-base-uncased",
-        num_labels=2
-    ).to(device)
-    
-    # Stricter training arguments with explanations
-    training_args = TrainingArguments(
-        output_dir="./balanced_model",
-        num_train_epochs=3,
-        per_device_train_batch_size=16,
-        per_device_eval_batch_size=16,
-        warmup_steps=500,
-        weight_decay=0.1,
-        logging_dir="./logs",
-        evaluation_strategy="epoch",
-        save_strategy="epoch",
-        load_best_model_at_end=True,
-        metric_for_best_model="accuracy",
-        learning_rate=2e-5,
-        gradient_accumulation_steps=2,
-        lr_scheduler_type="cosine",
-        # Early stopping through checkpoints
-        save_total_limit=2,  # Keep only the last 2 checkpoints
-        greater_is_better=True  # For accuracy metric
-    )
-    
-    # Use k-fold cross validation
-    kf = KFold(n_splits=5, shuffle=True, random_state=42)
+    # Use k-fold with more folds
+    kf = StratifiedKFold(n_splits=5, shuffle=True, random_state=42)
     
     fold_scores = []
-    for fold, (train_idx, val_idx) in enumerate(kf.split(texts)):
+    for fold, (train_idx, val_idx) in enumerate(kf.split(texts, labels)):
         print(f"\nTraining fold {fold+1}/5...")
         
         # Get fold's train/val data
@@ -336,20 +379,20 @@ def retrain_model():
         fold_val_texts = [texts[i] for i in val_idx]
         fold_val_labels = [labels[i] for i in val_idx]
         
-        # Add noise to training data
-        fold_train_texts = [add_diverse_noise_to_text(text) for text in fold_train_texts]
-        
         # Prepare datasets
         train_dataset = tokenize_data(fold_train_texts, fold_train_labels, tokenizer)
         val_dataset = tokenize_data(fold_val_texts, fold_val_labels, tokenizer)
         
-        # Initialize trainer for this fold
+        # Initialize trainer with early stopping
         trainer = Trainer(
             model=model,
             args=training_args,
             train_dataset=train_dataset,
             eval_dataset=val_dataset,
-            compute_metrics=compute_metrics
+            compute_metrics=compute_metrics,
+            callbacks=[
+                early_stopping
+            ]
         )
         
         # Train and evaluate
@@ -360,12 +403,97 @@ def retrain_model():
         print(f"\nFold {fold+1} Results:")
         print(eval_results)
     
-    # Print average scores across folds
-    print("\nAverage scores across folds:")
-    metrics = ['eval_loss', 'eval_accuracy', 'eval_precision', 'eval_recall', 'eval_f1']
-    for metric in metrics:
-        avg_score = sum(score[metric] for score in fold_scores) / len(fold_scores)
-        print(f"{metric}: {avg_score:.4f}")
+    # Comprehensive testing after training
+    print("\nComprehensive Model Validation:")
+    test_cases = [
+        # Normal cases
+        ["User viewing product catalog",
+         "Standard GET request to homepage",
+         "Successfully logged in to dashboard",
+         "Regular database query completed",
+         "Normal HTTPS traffic on port 443"],
+        
+        # Malicious cases
+        ["SQL injection attempt detected",
+         "Multiple failed login attempts from IP",
+         "Port scanning activity detected",
+         "Unauthorized access to admin panel",
+         "Cross-site scripting attempt blocked"],
+        
+        # Edge cases
+        ["Failed login attempt",  # Could be normal or malicious
+         "Database query with special characters",
+         "Admin panel access granted",
+         "Large file download initiated",
+         "Multiple requests from same IP"]
+    ]
+    
+    print("\nTesting with diverse cases:")
+    model.eval()
+    with torch.no_grad():
+        for category in test_cases:
+            print(f"\nTesting category:")
+            for text in category:
+                inputs = tokenizer(text, return_tensors="pt", truncation=True)
+                inputs = {k: v.to(device) for k, v in inputs.items()}
+                outputs = model(**inputs)
+                probs = torch.nn.functional.softmax(outputs.logits, dim=1)[0]
+                prediction = outputs.logits.argmax(-1).item()
+                confidence = probs[prediction].item()
+                
+                print(f"\nText: {text}")
+                print(f"Prediction: {'Normal' if prediction == 0 else 'Malicious'}")
+                print(f"Confidence: {confidence:.2%}")
+                print(f"Normal prob: {probs[0]:.2%}")
+                print(f"Malicious prob: {probs[1]:.2%}")
+    
+    # Add adversarial validation during testing
+    def test_with_adversarial(text, small_perturbations=True):
+        """Test model with slight variations of input."""
+        base_inputs = tokenizer(text, return_tensors="pt", truncation=True)
+        base_inputs = {k: v.to(device) for k, v in base_inputs.items()}
+        
+        with torch.no_grad():
+            base_output = model(**base_inputs)
+            base_pred = base_output.logits.argmax(-1).item()
+            base_conf = torch.nn.functional.softmax(base_output.logits, dim=1)[0]
+            
+            if small_perturbations:
+                # Test with minor text variations
+                variations = [
+                    text.lower(),
+                    text.upper(),
+                    text + ".",
+                    text.replace("to", "2"),
+                    text.replace("for", "4")
+                ]
+                
+                all_preds = []
+                for var in variations:
+                    var_inputs = tokenizer(var, return_tensors="pt", truncation=True)
+                    var_inputs = {k: v.to(device) for k, v in var_inputs.items()}
+                    var_output = model(**var_inputs)
+                    all_preds.append(var_output.logits.argmax(-1).item())
+                
+                # Check prediction stability
+                if len(set(all_preds)) > 1:
+                    print(f"WARNING: Unstable predictions for '{text}'")
+                    print(f"Variations gave different results: {all_preds}")
+        
+        return base_pred, base_conf
+    
+    # Add more comprehensive testing
+    test_cases.extend([
+        # Edge cases
+        ["admin login successful but from new IP",
+         "multiple requests but within normal range",
+         "failed login followed by success"],
+        
+        # Mixed signals
+        ["unauthorized user with valid credentials",
+         "high volume traffic from trusted source",
+         "unusual pattern from known user"]
+    ])
     
     return model, tokenizer
 
@@ -407,167 +535,177 @@ def validate_model(model, tokenizer):
                 print(f"Confidence: {confidence[prediction].item():.2%}")
 
 def train_with_wandb():
-    """Training function with improved architecture and regularization"""
-    # Initialize wandb with new config
+    """Quick retraining with bias fixes"""
     run = wandb.init(
         project="network-vulnerability-classifier",
-        name=f"improved-arch-{time.strftime('%Y%m%d-%H%M%S')}",
-        config={
-            "architecture": "bert-base-uncased",
-            "learning_rate": 5e-7,      # Much smaller learning rate
-            "weight_decay": 0.8,        # Stronger regularization
-            "num_train_epochs": 5,      # More epochs
-            "warmup_ratio": 0.3,        # Longer warmup
-            "gradient_clip": 0.3,       # Aggressive clipping
-            "dropout": 0.5              # Maximum dropout
-        }
+        name=f"debiased-train-{time.strftime('%Y%m%d-%H%M%S')}"
     )
-    config = wandb.config
     
     # Get balanced dataset
     balanced_df = clean_and_balance_dataset()
     
-    # Calculate class weights
-    total_samples = len(balanced_df)
-    class_counts = balanced_df['corrected_label'].value_counts()
-    class_weights = {
-        0: total_samples / (2 * class_counts[0]),
-        1: total_samples / (2 * class_counts[1])
-    }
-    print(f"Class weights: {class_weights}")
-    
-    # Initialize tokenizer
+    # Initialize model with better defaults
     tokenizer = AutoTokenizer.from_pretrained("bert-base-uncased")
-    
-    # Initialize model with high dropout
     model = AutoModelForSequenceClassification.from_pretrained(
         "bert-base-uncased",
         num_labels=2,
-        hidden_dropout_prob=config.dropout,
-        attention_probs_dropout_prob=config.dropout,
-        classifier_dropout=config.dropout  # Add dropout to classifier layer
+        hidden_dropout_prob=0.5,
+        attention_probs_dropout_prob=0.5,
+        problem_type="single_label_classification"
     ).to(device)
     
-    # Enhanced training arguments
+    # Better training arguments (ALL duplicates removed)
     training_args = TrainingArguments(
-        output_dir=f"./balanced_model_{run.id}",
-        num_train_epochs=config.num_train_epochs,
-        per_device_train_batch_size=8,   # Smaller batch size
-        per_device_eval_batch_size=8,
-        
-        # Learning rate and regularization
-        learning_rate=config.learning_rate,
-        weight_decay=config.weight_decay,
-        warmup_ratio=config.warmup_ratio,
-        
-        # Gradient handling
-        gradient_accumulation_steps=32,   # Increased for stability
-        max_grad_norm=config.gradient_clip,
-        fp16=True,                       # Mixed precision training
-        
-        # Early stopping and evaluation
-        load_best_model_at_end=True,
-        metric_for_best_model="eval_loss",
-        greater_is_better=False,
+        output_dir=f"./balanced_model_debiased_{run.id}",
+        num_train_epochs=2,               # Reduced epochs
+        per_device_train_batch_size=16, # Smaller batch size
+        per_device_eval_batch_size=16,
+        gradient_accumulation_steps=4,
         evaluation_strategy="steps",
-        eval_steps=50,                   # More frequent evaluation
-        
-        # Logging
+        eval_steps=25,                    # More frequent evaluation
         logging_steps=10,
-        report_to="wandb",
-        
-        # Checkpointing
         save_strategy="steps",
         save_steps=50,
-        save_total_limit=2,
-        
-        # Label smoothing for better generalization
-        label_smoothing_factor=0.1
+        save_total_limit=1,
+        fp16=torch.cuda.is_available(),
+        learning_rate=2e-5,             # Higher learning rate
+        weight_decay=0.1,              # Only one weight_decay parameter
+        warmup_ratio=0.1,              # Only warmup parameter
+        load_best_model_at_end=True,
+        metric_for_best_model="eval_f1",
+        greater_is_better=True,
+        lr_scheduler_type="cosine",      # Added scheduler
+        early_stopping_patience=2,        # Stop earlier if no improvement
+        early_stopping_threshold=0.01     # Smaller improvement threshold
     )
     
-    # Early stopping with longer patience
-    early_stopping = EarlyStoppingCallback(
-        early_stopping_patience=3,
-        early_stopping_threshold=0.01
+    # Stratified split to maintain class distribution
+    train_texts, val_texts, train_labels, val_labels = train_test_split(
+        balanced_df['Text'].tolist(),
+        balanced_df['corrected_label'].tolist(),
+        test_size=0.2,
+        stratify=balanced_df['corrected_label'],  # Ensure balanced split
+        random_state=42
     )
     
-    # K-fold with stratification
-    skf = StratifiedKFold(n_splits=5, shuffle=True, random_state=42)
-    texts = balanced_df['Text'].tolist()
-    labels = balanced_df['corrected_label'].tolist()
+    # Prepare datasets
+    train_dataset = tokenize_data(train_texts, train_labels, tokenizer)
+    val_dataset = tokenize_data(val_texts, val_labels, tokenizer)
     
-    fold_scores = []
-    for fold, (train_idx, val_idx) in enumerate(skf.split(texts, labels)):
-        print(f"\nTraining fold {fold+1}/5...")
-        
-        # Prepare datasets with class weights
-        train_dataset = tokenize_data(
-            [texts[i] for i in train_idx],
-            [labels[i] for i in train_idx],
-            tokenizer
-        )
-        val_dataset = tokenize_data(
-            [texts[i] for i in val_idx],
-            [labels[i] for i in val_idx],
-            tokenizer
-        )
-        
-        # Initialize trainer with class weights
-        trainer = Trainer(
-            model=model,
-            args=training_args,
-            train_dataset=train_dataset,
-            eval_dataset=val_dataset,
-            compute_metrics=compute_metrics,
-            callbacks=[early_stopping],
-            class_weights=class_weights
-        )
-        
-        # Train and evaluate
-        trainer.train()
-        eval_results = trainer.evaluate()
-        fold_scores.append(eval_results)
-        
-        # Detailed logging
-        wandb.log({
-            f"fold_{fold+1}/eval_loss": eval_results["eval_loss"],
-            f"fold_{fold+1}/accuracy": eval_results["eval_accuracy"],
-            f"fold_{fold+1}/precision": eval_results["eval_precision"],
-            f"fold_{fold+1}/recall": eval_results["eval_recall"],
-            f"fold_{fold+1}/f1": eval_results["eval_f1"],
-            f"fold_{fold+1}/confusion_matrix": wandb.plot.confusion_matrix(
-                probs=None,
-                y_true=labels,
-                preds=trainer.predict(val_dataset).predictions.argmax(-1)
+    # Initialize trainer with corrected EarlyStoppingCallback
+    trainer = Trainer(
+        model=model,
+        args=training_args,
+        train_dataset=train_dataset,
+        eval_dataset=val_dataset,
+        compute_metrics=compute_metrics,
+        callbacks=[
+            EarlyStoppingCallback(
+                early_stopping_patience=3,
+                early_stopping_threshold=0.01,
             )
-        })
+        ]
+    )
     
-    # Log final average metrics
-    avg_metrics = {
-        metric: np.mean([score[metric] for score in fold_scores])
-        for metric in fold_scores[0].keys()
-    }
-    wandb.log({"final_avg_metrics": avg_metrics})
+    # Train and evaluate
+    trainer.train()
+    eval_results = trainer.evaluate()
+    
+    # Log metrics
+    wandb.log(eval_results)
     
     return model, tokenizer
 
-# Initialize and run the sweep with new config
-sweep_config = {
-    'method': 'bayes',
-    'metric': {'name': 'eval_loss', 'goal': 'minimize'},
-    'parameters': {
-        'learning_rate': {'min': 1e-7, 'max': 1e-6, 'distribution': 'log_uniform'},
-        'weight_decay': {'min': 0.7, 'max': 0.9, 'distribution': 'uniform'},
-        'dropout': {'values': [0.4, 0.5, 0.6]},
-        'warmup_ratio': {'values': [0.2, 0.3, 0.4]},
-        'gradient_clip': {'values': [0.2, 0.3, 0.4]}
+def augment_normal_traffic():
+    """Generate more realistic normal traffic patterns"""
+    templates = {
+        'web_access': [
+            "User {user_id} accessed {resource} via {protocol} at {timestamp}",
+            "Successful {method} request to {endpoint} from {ip_address}",
+            "Client {client_id} performed {action} on {resource} using {auth_method}"
+        ],
+        'database': [
+            "Standard {query_type} operation on {table} by {user_role}",
+            "Database {action} completed successfully for {user_id}",
+            "Routine {operation} on {database} with {permissions}"
+        ],
+        'authentication': [
+            "User {user_id} logged in with {auth_method} from {location}",
+            "Successful authentication for {service} using {protocol}",
+            "Valid session created for {user_role} with {access_level}"
+        ]
     }
-}
+    
+    variables = {
+        'user_id': [f"user_{i}" for i in range(1000, 9999)],
+        'resource': ['product_catalog', 'user_profile', 'order_history', 'settings'],
+        'protocol': ['HTTPS', 'TLS 1.3', 'SSH', 'SFTP'],
+        'method': ['GET', 'POST', 'PUT', 'PATCH'],
+        'auth_method': ['2FA', 'SSO', 'password', 'token'],
+        'query_type': ['SELECT', 'INSERT', 'UPDATE', 'JOIN'],
+        'operation': ['backup', 'index', 'analyze', 'optimize']
+    }
+    
+    return templates, variables
 
-sweep_id = wandb.sweep(sweep_config, project="network-vulnerability-classifier")
-wandb.agent(sweep_id, train_with_wandb, count=5)
+def validate_label(text, label, confidence):
+    """Validate labels with additional security rules"""
+    
+    # High-risk keywords that should always be reviewed
+    high_risk = ['admin', 'root', 'password', 'credential', 'token']
+    
+    # Suspicious combinations
+    suspicious_pairs = [
+        ('delete', 'database'),
+        ('drop', 'table'),
+        ('chmod', '777'),
+        ('exec', 'shell')
+    ]
+    
+    needs_review = False
+    
+    # Check for high-risk keywords
+    if any(word in text.lower() for word in high_risk):
+        needs_review = True
+    
+    # Check for suspicious combinations
+    if any(all(word in text.lower() for word in pair) for pair in suspicious_pairs):
+        needs_review = True
+    
+    # Low confidence predictions need review
+    if confidence < 0.6:
+        needs_review = True
+    
+    return needs_review
 
+# Add class weights to focus more on malicious detection
+class_weights = torch.tensor([1.0, 2.0]).to(device)  # Weight malicious class more
+
+# Run single training without sweep
 if __name__ == "__main__":
-    print("Starting model retraining process...")
+    print("Starting retraining...")
+    #model, tokenizer = train_with_wandb()
     model, tokenizer = retrain_model()
     validate_model(model, tokenizer) 
+
+def predict_with_threshold(text, confidence_threshold=0.85):
+    outputs = model(**inputs)
+    probs = torch.nn.functional.softmax(outputs.logits, dim=1)[0]
+    prediction = outputs.logits.argmax(-1).item()
+    confidence = probs[prediction].item()
+    
+    if confidence < confidence_threshold:
+        return "Uncertain", confidence
+    return "Normal" if prediction == 0 else "Malicious", confidence 
+
+def train_with_cv(n_splits=5):
+    kf = KFold(n_splits=n_splits, shuffle=True, random_state=42)
+    scores = []
+    
+    for fold, (train_idx, val_idx) in enumerate(kf.split(texts)):
+        print(f"Training fold {fold+1}/{n_splits}")
+        # Train model on this fold
+        fold_scores = train_fold(train_idx, val_idx)
+        scores.append(fold_scores)
+    
+    return np.mean(scores, axis=0) 
